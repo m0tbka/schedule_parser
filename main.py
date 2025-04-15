@@ -6,6 +6,9 @@ from pathlib import Path
 from docx import Document
 from icalendar import Calendar, Event
 
+from clusters import EventClusterer, Cluster
+from analyze import ClusterVisualizer
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -143,20 +146,49 @@ def parse_event_row(cells, current_date):
         "description": description
     }
 
-def create_ics(events, output_path):
+def analyze_clusters(events):
+    # Кластеризация
+    clusterer = EventClusterer()
+    clusters = clusterer.cluster_events(events)
+    
+    # Анализ
+    logger.info("\nCluster Summary:")
+    for cluster in clusters:
+        logger.info(f"• {cluster.name} ({len(cluster.events)} events): {cluster.color}")
+    
+    # Визуализация
+    logger.info("Plotting cluster distribution")
+    ClusterVisualizer.plot_cluster_distribution(clusters)
+#    logger.info("Plotting temporal distribution")
+#    ClusterVisualizer.plot_temporal_distribution(clusters)
+#    logger.info("Plotting embeddings")
+#    ClusterVisualizer.plot_embeddings(clusters)
+    
+    # Пример облака слов для первого кластера
+    if clusters:
+        logger.info("Plotting wordcloud")
+        ClusterVisualizer.generate_wordcloud(clusters[0])
+    
+    return clusters
+
+def create_ics(events, output_path, clusters):
     try:
         cal = Calendar()
         cal.add('prodid', '-//Student Camp Calendar//mxm.dk//')
         cal.add('version', '2.0')
 
-        for event in events:
-            ical_event = Event()
-            ical_event.add('summary', event["name"])
-            ical_event.add('dtstart', event["start"])
-            ical_event.add('dtend', event["end"])
-            ical_event.add('location', event["location"])
-            ical_event.add('description', event["description"])
-            cal.add_component(ical_event)
+        # Создаем календарь с цветами
+        for cluster in clusters:
+            for event in cluster.events:
+                ical_event = Event()
+                ical_event.add('summary', event["name"])
+                ical_event.add('dtstart', event["start"])
+                ical_event.add('dtend', event["end"])
+                ical_event.add('location', event["location"])
+                ical_event.add('description', event["description"])
+                ical_event.add('x-wr-calname', cluster.name)
+                ical_event.add('color', cluster.color)
+                cal.add_component(ical_event)
 
         with open(output_path, 'wb') as f:
             f.write(cal.to_ical())
@@ -175,7 +207,8 @@ if __name__ == "__main__":
 
     try:
         events = parse_docx_to_events(args.input, stats)
-        create_ics(events, args.output)
+        clusters = analyze_clusters(events)
+        create_ics(events, args.output, clusters)
     except FileNotFoundError:
         logger.error(f"File not found: {args.input}")
     except Exception as e:
