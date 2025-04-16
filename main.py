@@ -1,10 +1,11 @@
 import re
 import logging
+import logging.config
 import argparse
 from datetime import datetime
 from pathlib import Path
 from docx import Document
-from icalendar import Calendar, Event
+from google_calendar import GoogleCalendarManager
 
 from clusters import EventClusterer, Cluster
 from analyze import ClusterVisualizer
@@ -12,8 +13,8 @@ from analyze import ClusterVisualizer
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    format='%(asctime)s - %(filename)s::%(funcName)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(), logging.FileHandler("log.txt", mode='a', encoding='utf-8')]
 )
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class ParserStats:
         self.error_entries = []
 
     def print_summary(self):
-        logger.info("\n=== Processing Summary ===")
+        logger.info("=== Processing Summary ===")
         logger.info(f"Total rows processed:    {self.total_rows}")
         logger.info(f"Date headers detected:   {self.date_rows}")
         logger.info(f"Events successfully parsed: {self.event_rows}")
@@ -36,12 +37,12 @@ class ParserStats:
         logger.info(f"Rows with errors:        {self.error_rows}")
 
         if self.skipped_entries:
-            logger.info("\nSkipped rows examples:")
+            logger.info("Skipped rows examples: {len(self.skipped_entries)}")
             for idx, entry in enumerate(self.skipped_entries, 1):
                 logger.info(f"{idx}. {entry}")
 
         if self.error_entries:
-            logger.info("\nError examples:")
+            logger.info("Error examples: {len(self.error_entries)}")
             for idx, entry in enumerate(self.error_entries, 1):
                 logger.info(f"{idx}. {entry[0]}")
                 logger.info(f"   Error: {entry[1]}")
@@ -52,6 +53,7 @@ def parse_arguments():
                         help='Input DOCX file path')
     parser.add_argument('-o', '--output', type=str, default='docs/student_camp_schedule.ics',
                         help='Output ICS file path')
+    parser.add_argument('-U', '--update', action="store_true", help="Update or not calendar events")
     return parser.parse_args()
 
 def parse_docx_to_events(docx_path, stats):
@@ -152,7 +154,7 @@ def analyze_clusters(events):
     clusters = clusterer.cluster_events(events)
     
     # Анализ
-    logger.info("\nCluster Summary:")
+    logger.info("Cluster Summary: {len(clusters)}")
     for cluster in clusters:
         logger.info(f"• {cluster.name} ({len(cluster.events)} events): {cluster.color}")
     
@@ -161,45 +163,20 @@ def analyze_clusters(events):
     ClusterVisualizer.plot_cluster_distribution(clusters)
 #    logger.info("Plotting temporal distribution")
 #    ClusterVisualizer.plot_temporal_distribution(clusters)
-#    logger.info("Plotting embeddings")
-#    ClusterVisualizer.plot_embeddings(clusters)
+    logger.info("Plotting embeddings")
+    ClusterVisualizer.plot_embeddings(clusters)
     
     # Пример облака слов для первого кластера
-    if clusters:
-        logger.info("Plotting wordcloud")
-        ClusterVisualizer.generate_wordcloud(clusters[0])
+#    if clusters:
+#        logger.info("Plotting wordcloud")
+#        ClusterVisualizer.generate_wordcloud(clusters[0])
     
     return clusters
 
-def create_ics(events, output_path, clusters):
-    try:
-        cal = Calendar()
-        cal.add('prodid', '-//Student Camp Calendar//mxm.dk//')
-        cal.add('version', '2.0')
-
-        # Создаем календарь с цветами
-        for cluster in clusters:
-            for event in cluster.events:
-                ical_event = Event()
-                ical_event.add('summary', event["name"])
-                ical_event.add('dtstart', event["start"])
-                ical_event.add('dtend', event["end"])
-                ical_event.add('location', event["location"])
-                ical_event.add('description', event["description"])
-                ical_event.add('x-wr-calname', cluster.name)
-                ical_event.add('color', cluster.color)
-                cal.add_component(ical_event)
-
-        with open(output_path, 'wb') as f:
-            f.write(cal.to_ical())
-        logger.info(f"File {output_path} successfully created")
-
-    except Exception as e:
-        logger.error(f"Error creating ICS file: {e}")
-        raise
 
 if __name__ == "__main__":
     args = parse_arguments()
+    logger.info(f"Args: {args}")
     stats = ParserStats()
     
     Path(args.input).parent.mkdir(parents=True, exist_ok=True)
@@ -208,10 +185,13 @@ if __name__ == "__main__":
     try:
         events = parse_docx_to_events(args.input, stats)
         clusters = analyze_clusters(events)
-        create_ics(events, args.output, clusters)
+
+        if args.update:
+            calendar_manager = GoogleCalendarManager()
+            calendar_manager.create_events(clusters)
     except FileNotFoundError:
-        logger.error(f"File not found: {args.input}")
+        logger.exception(f"File not found: {args.input}")
     except Exception as e:
-        logger.error(f"Critical error: {e}")
+        logger.exception(f"Critical error: {e}")
     finally:
         stats.print_summary()

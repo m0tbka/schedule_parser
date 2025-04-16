@@ -1,4 +1,6 @@
+import logging
 import numpy as np
+from pandas import DataFrame as DF
 from bpemb import BPEmb
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
@@ -6,6 +8,8 @@ from collections import defaultdict
 import colorsys
 from dataclasses import dataclass
 from typing import List, Dict
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Cluster:
@@ -31,8 +35,7 @@ class EventClusterer:
         ]
     
     def _embed_events(self, events: List[dict]) -> np.ndarray:
-        return np.array([self.bpe.embed(event['name']).mean(axis=0) 
-                       for event in events])
+        return DF([self.bpe.embed(event['name']).mean(axis=0) for event in events])
     
     def _auto_name_cluster(self, events: List[dict]) -> str:
         word_counts = defaultdict(int)
@@ -51,7 +54,8 @@ class EventClusterer:
         # Determine optimal clusters
         if not n_clusters:
             n_clusters = self._find_optimal_clusters(embeddings)
-        
+        logger.info(f"Optimal clusters number: {n_clusters}")
+
         # Clustering
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
         labels = kmeans.fit_predict(embeddings)

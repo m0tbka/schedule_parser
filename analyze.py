@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import plotly.express as px
 import numpy as np
+from pandas import DataFrame as DF
 from wordcloud import WordCloud
 from sklearn.manifold import TSNE
 from pandas import DataFrame
@@ -52,8 +53,10 @@ class ClusterVisualizer:
     
     @staticmethod
     def plot_embeddings(clusters: List[Cluster]):
-        tsne = TSNE(n_components=2, random_state=42)
-        embeds = tsne.fit_transform(np.array([c.vector for c in clusters]))
+        tsne = TSNE(n_components=2, perplexity=len(clusters) - 1, random_state=42)
+#        for c in clusters:
+#            print(c.vector)
+        embeds = tsne.fit_transform(DF([c.vector for c in clusters]))
         
         plt.figure(figsize=(12, 8))
         for i, c in enumerate(clusters):
