@@ -4,12 +4,46 @@ from pandas import DataFrame as DF
 from bpemb import BPEmb
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from sklearn.feature_extraction.text import TfidfVectorizer
 from collections import defaultdict
 import colorsys
 from dataclasses import dataclass
 from typing import List, Dict
+import re
+from pymorphy3 import MorphAnalyzer
+from nltk.corpus import stopwords
 
 logger = logging.getLogger(__name__)
+
+
+def preprocess_event_name(text):
+    # Инициализация лемматизатора и стоп-слов
+    morph = MorphAnalyzer()
+    russian_stopwords = stopwords.words('russian') + ['мфти', 'фпми']
+
+    # Приведение к нижнему регистру
+    text = text.lower()
+    
+    # Удаление лишних символов (все, кроме букв, цифр и пробелов)
+    text = re.sub(r'[^\w\s]', '', text)
+    
+    # Токенизация по пробелам
+    words = text.split()
+    
+    # Удаление стоп-слов и лемматизация
+    processed_words = []
+    for word in words:
+        if word not in russian_stopwords and not word.isdigit():
+            # Лемматизация
+            parsed_word = morph.parse(word)[0]
+            lemma = parsed_word.normal_form
+            processed_words.append(lemma)
+#            processed_words.append(word)
+    
+    # Сборка обратно в строку
+    processed_text = ' '.join(processed_words[:3])
+    
+    return processed_text
 
 @dataclass
 class Cluster:
@@ -18,10 +52,10 @@ class Cluster:
     color: str
     keywords: List[str]
     events: List[dict]
-    vector: np.ndarray
+    vector: DF
 
 class EventClusterer:
-    def __init__(self, language='ru', vs=10000, dim=100):
+    def __init__(self, language='ru', vs=100000, dim=200):
         self.bpe = BPEmb(lang=language, vs=vs, dim=dim)
         self.clusters: Dict[int, Cluster] = {}
         self._color_palette = []
@@ -35,7 +69,12 @@ class EventClusterer:
         ]
     
     def _embed_events(self, events: List[dict]) -> np.ndarray:
-        return DF([self.bpe.embed(event['name']).mean(axis=0) for event in events])
+         vectorizer = TfidfVectorizer()
+#         corpus = ' '.join([' '.join([w for w in e['name'].split()]) for e in events])
+         corpus = [e['name'] for e in events]
+         return vectorizer.fit_transform(corpus)
+         
+#        return DF([self.bpe.embed(event['name']).mean(axis=0) for event in events])
     
     def _auto_name_cluster(self, events: List[dict]) -> str:
         word_counts = defaultdict(int)
@@ -48,6 +87,11 @@ class EventClusterer:
     
     def cluster_events(self, events: List[dict], 
                       n_clusters: int = None) -> List[Cluster]:
+
+        for e in events:
+            e["bname"] = e["name"]
+            e["name"] = preprocess_event_name(e["name"])
+
         # Embedding
         embeddings = self._embed_events(events)
         
@@ -65,7 +109,7 @@ class EventClusterer:
         clusters = {}
         for cluster_id in range(n_clusters):
             cluster_events = [e for e, l in zip(events, labels) if l == cluster_id]
-            cluster_emb = embeddings[labels == cluster_id].mean(axis=0)
+            cluster_emb = embeddings[labels == cluster_id]
             
             clusters[cluster_id] = Cluster(
                 id=cluster_id,
@@ -86,4 +130,5 @@ class EventClusterer:
             kmeans = KMeans(n_clusters=k, random_state=42)
             labels = kmeans.fit_predict(embeddings)
             scores.append(silhouette_score(embeddings, labels))
+        logger.info(f"Best silhouette_score: {np.max(scores)}")
         return np.argmax(scores) + 2

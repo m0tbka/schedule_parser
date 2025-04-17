@@ -2,6 +2,7 @@ import re
 import logging
 import logging.config
 import argparse
+import nltk
 from datetime import datetime
 from pathlib import Path
 from docx import Document
@@ -37,12 +38,12 @@ class ParserStats:
         logger.info(f"Rows with errors:        {self.error_rows}")
 
         if self.skipped_entries:
-            logger.info("Skipped rows examples: {len(self.skipped_entries)}")
+            logger.info(f"Skipped rows examples: {len(self.skipped_entries)}")
             for idx, entry in enumerate(self.skipped_entries, 1):
                 logger.info(f"{idx}. {entry}")
 
         if self.error_entries:
-            logger.info("Error examples: {len(self.error_entries)}")
+            logger.info(f"Error examples: {len(self.error_entries)}")
             for idx, entry in enumerate(self.error_entries, 1):
                 logger.info(f"{idx}. {entry[0]}")
                 logger.info(f"   Error: {entry[1]}")
@@ -54,6 +55,7 @@ def parse_arguments():
     parser.add_argument('-o', '--output', type=str, default='docs/student_camp_schedule.ics',
                         help='Output ICS file path')
     parser.add_argument('-U', '--update', action="store_true", help="Update or not calendar events")
+    parser.add_argument('-P', '--plot', action="store_true", help="Plot or not clusters info")
     return parser.parse_args()
 
 def parse_docx_to_events(docx_path, stats):
@@ -148,28 +150,32 @@ def parse_event_row(cells, current_date):
         "description": description
     }
 
-def analyze_clusters(events):
+def analyze_clusters(events, plot=False):
     # Кластеризация
     clusterer = EventClusterer()
     clusters = clusterer.cluster_events(events)
     
     # Анализ
-    logger.info("Cluster Summary: {len(clusters)}")
+    logger.info(f"Cluster Summary: {len(clusters)}")
     for cluster in clusters:
         logger.info(f"• {cluster.name} ({len(cluster.events)} events): {cluster.color}")
+        for e in cluster.events:
+            logger.info(f"\t- {e['name']}")
     
     # Визуализация
+    if not plot:
+        return clusters
+
     logger.info("Plotting cluster distribution")
     ClusterVisualizer.plot_cluster_distribution(clusters)
 #    logger.info("Plotting temporal distribution")
 #    ClusterVisualizer.plot_temporal_distribution(clusters)
     logger.info("Plotting embeddings")
     ClusterVisualizer.plot_embeddings(clusters)
-    
     # Пример облака слов для первого кластера
-#    if clusters:
-#        logger.info("Plotting wordcloud")
-#        ClusterVisualizer.generate_wordcloud(clusters[0])
+    if clusters:
+        logger.info("Plotting wordcloud")
+        ClusterVisualizer.generate_wordcloud(clusters[0])
     
     return clusters
 
@@ -184,7 +190,8 @@ if __name__ == "__main__":
 
     try:
         events = parse_docx_to_events(args.input, stats)
-        clusters = analyze_clusters(events)
+        nltk.download('stopwords')
+        clusters = analyze_clusters(events, args.plot)
 
         if args.update:
             calendar_manager = GoogleCalendarManager()

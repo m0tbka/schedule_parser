@@ -56,6 +56,8 @@ class GoogleCalendarManager:
         calendars = self.service.calendarList().list().execute()
         for cal in calendars.get('items', []):
             if cal['summary'] == name:
+                logger.info(f"Calendar found: {cal['id']}")
+#                self.service.calendars().clear(calendarId=cal['id']).execute()
                 return cal['id']
         
         # Создание нового календаря
@@ -64,6 +66,7 @@ class GoogleCalendarManager:
             'timeZone': 'Europe/Moscow'
         }
         created = self.service.calendars().insert(body=calendar).execute()
+        logger.info(f"Calendar not found, created new: {created['id']}")
         return created['id']
 
     def _map_cluster_to_color(self, cluster_id):
@@ -72,7 +75,13 @@ class GoogleCalendarManager:
             self.cluster_colors[cluster_id] = self.color_map[color_id]
         return self.cluster_colors[cluster_id]
 
+    def delete_all_events(self):
+         for e in self.service.events().list(calendarId=self.calendar_id).execute().get('items'):
+             logger.info(f"Deleting event {e['summary']} with id {e['id']}")
+             self.service.events().delete(calendarId=self.calendar_id, eventId=e['id']).execute()
+
     def create_events(self, clusters):
+        self.delete_all_events()
         for cluster in clusters:
 #            color = self._map_cluster_to_color(cluster.id)
             for event in cluster.events:
@@ -80,7 +89,7 @@ class GoogleCalendarManager:
 
     def _create_event(self, event_data, color):
         event = {
-            'summary': event_data['name'],
+            'summary': event_data['bname'],
             'location': event_data.get('location', ''),
             'description': event_data.get('description', ''),
             'start': {

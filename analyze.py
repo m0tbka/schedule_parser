@@ -56,7 +56,7 @@ class ClusterVisualizer:
         tsne = TSNE(n_components=2, perplexity=len(clusters) - 1, random_state=42)
 #        for c in clusters:
 #            print(c.vector)
-        embeds = tsne.fit_transform(DF([c.vector for c in clusters]))
+        embeds = tsne.fit_transform(DF(*[c.vector for c in clusters]))
         
         plt.figure(figsize=(12, 8))
         for i, c in enumerate(clusters):
