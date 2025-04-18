@@ -6,8 +6,12 @@ from wordcloud import WordCloud
 from sklearn.manifold import TSNE
 from pandas import DataFrame
 from typing import List
+from itertools import chain
+import logging
 
 from clusters import Cluster
+
+logger = logging.getLogger(__name__)
 
 class ClusterVisualizer:
     @staticmethod
@@ -54,9 +58,11 @@ class ClusterVisualizer:
     @staticmethod
     def plot_embeddings(clusters: List[Cluster]):
         tsne = TSNE(n_components=2, perplexity=len(clusters) - 1, random_state=42)
-#        for c in clusters:
-#            print(c.vector)
-        embeds = tsne.fit_transform(DF(*[c.vector for c in clusters]))
+        for c in clusters:
+            print(c.vector)
+#        logger.info(list(chain(*[c.vector for c in clusters])))
+#        embeds = tsne.fit_transform(DF(list(chain(*[for e in c.events for c in clusters]))))
+        embeds = tsne.fit_transform(DF([c.vector for c in clusters]))
         
         plt.figure(figsize=(12, 8))
         for i, c in enumerate(clusters):

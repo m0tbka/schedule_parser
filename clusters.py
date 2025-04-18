@@ -12,11 +12,12 @@ from typing import List, Dict
 import re
 from pymorphy3 import MorphAnalyzer
 from nltk.corpus import stopwords
+from operator import itemgetter
 
 logger = logging.getLogger(__name__)
 
 
-def preprocess_event_name(text):
+def preprocess_event_name(text, n_words=None):
     # Инициализация лемматизатора и стоп-слов
     morph = MorphAnalyzer()
     russian_stopwords = stopwords.words('russian') + ['мфти', 'фпми']
@@ -41,7 +42,7 @@ def preprocess_event_name(text):
 #            processed_words.append(word)
     
     # Сборка обратно в строку
-    processed_text = ' '.join(processed_words[:3])
+    processed_text = ' '.join(processed_words[:n_words if n_words else len(processed_words)])
     
     return processed_text
 
@@ -69,12 +70,26 @@ class EventClusterer:
         ]
     
     def _embed_events(self, events: List[dict]) -> np.ndarray:
-         vectorizer = TfidfVectorizer()
+#         vect = TfidfVectorizer(use_idf=False)
 #         corpus = ' '.join([' '.join([w for w in e['name'].split()]) for e in events])
          corpus = [e['name'] for e in events]
-         return vectorizer.fit_transform(corpus)
+#         mat = vect.fit_transform(corpus)
+#         sr = [word for _, word in sorted(zip(mat.toarray()[0], vect.get_feature_names_out()), reverse=True, key=itemgetter(0, 1))]
+         sr = defaultdict(int)
+         for event in events:
+             for word in event['name'].split():
+                 sr[word.lower()] += 1
+         logger.info(f"Sorted TF-IDF words:")
+         logger.info(sr)
+#         corpus = [' '.join(map(lambda x: x[1], sorted([(sr.index(w), w) if w in sr else (10000, w) for w in e.split()[:4]])[:3])) for e in corpus]
+         corpus = [' '.join(map(lambda x: x[1], sorted([(sr.get(w, -1), w) for w in e.split()], reverse=True, key=itemgetter(0, 1))[:2])) for e in corpus]
+         logger.info(f"New filtered corpus:")
+         logger.info(corpus)
+#         vect = TfidfVectorizer()
+#         return vect.fit_transform(corpus)
          
-#        return DF([self.bpe.embed(event['name']).mean(axis=0) for event in events])
+         return np.array([self.bpe.embed(event).mean(axis=0) 
+                       for event in corpus])
     
     def _auto_name_cluster(self, events: List[dict]) -> str:
         word_counts = defaultdict(int)
@@ -101,7 +116,7 @@ class EventClusterer:
         logger.info(f"Optimal clusters number: {n_clusters}")
 
         # Clustering
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, tol=1e-8)
         labels = kmeans.fit_predict(embeddings)
         
         # Create Cluster objects
@@ -109,7 +124,7 @@ class EventClusterer:
         clusters = {}
         for cluster_id in range(n_clusters):
             cluster_events = [e for e, l in zip(events, labels) if l == cluster_id]
-            cluster_emb = embeddings[labels == cluster_id]
+            cluster_emb = embeddings[labels == cluster_id].mean(axis=0)
             
             clusters[cluster_id] = Cluster(
                 id=cluster_id,
@@ -124,7 +139,7 @@ class EventClusterer:
         return list(clusters.values())
     
     def _find_optimal_clusters(self, embeddings: np.ndarray, 
-                              max_clusters: int = 10) -> int:
+                              max_clusters: int = 11) -> int:
         scores = []
         for k in range(2, max_clusters+1):
             kmeans = KMeans(n_clusters=k, random_state=42)
