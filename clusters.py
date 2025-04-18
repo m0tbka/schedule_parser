@@ -13,6 +13,8 @@ import re
 from pymorphy3 import MorphAnalyzer
 from nltk.corpus import stopwords
 from operator import itemgetter
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,69 @@ class EventClusterer:
             for r, g, b in rgb
         ]
     
+    def plot_embeddings(self, clusters: List[Cluster]):
+        """Визуализирует все события в 2D пространстве с цветами кластеров"""
+        # Собираем все эмбеддинги и метки
+        all_embeddings = []
+        all_labels = []
+        event_names = []
+    
+        for cluster in clusters:
+            for event in cluster.events:
+                # Используем эмбеддинг названия события
+                event_embedding = self.bpe.embed(event['name']).mean(axis=0)
+                all_embeddings.append(event_embedding)
+                all_labels.append(cluster.id)
+                event_names.append(event['name'])
+    
+        if not all_embeddings:
+            logger.warning("No events to visualize")
+            return
+    
+    # Преобразуем в numpy массивы
+        embeddings_array = np.array(all_embeddings)
+        labels_array = np.array(all_labels)
+    
+    # Снижение размерности
+        tsne = TSNE(n_components=2, random_state=42, perplexity=min(30, len(all_embeddings)-1))
+        reduced_embeds = tsne.fit_transform(embeddings_array)
+    
+    # Создаем график
+        plt.figure(figsize=(14, 10))
+    
+    # Рисуем точки для каждого кластера
+        for cluster in clusters:
+            mask = labels_array == cluster.id
+            plt.scatter(
+                reduced_embeds[mask, 0], 
+                reduced_embeds[mask, 1],
+                color=cluster.color,
+                label=f"{cluster.name} ({np.sum(mask)} events)",
+                alpha=0.6,
+                s=50
+            )
+    
+    # Добавляем подписи для некоторых точек
+        for i in range(0, len(event_names), len(event_names)//20):
+            plt.text(
+                reduced_embeds[i, 0], 
+                reduced_embeds[i, 1],
+                event_names[i][:15] + "...",
+                fontsize=8,
+                alpha=0.7
+            )
+    
+        plt.title('Event Embeddings Visualization by Cluster', pad=20)
+        plt.xlabel('t-SNE dimension 1')
+        plt.ylabel('t-SNE dimension 2')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid(alpha=0.2)
+        plt.tight_layout()
+    
+    # Сохраняем и показываем
+#        plt.savefig('event_embeddings.png', dpi=150, bbox_inches='tight')
+        plt.show()
+
     def _embed_events(self, events: List[dict]) -> np.ndarray:
 #         vect = TfidfVectorizer(use_idf=False)
 #         corpus = ' '.join([' '.join([w for w in e['name'].split()]) for e in events])

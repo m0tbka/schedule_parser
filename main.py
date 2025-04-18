@@ -170,7 +170,8 @@ def analyze_clusters(events, plot=False):
     ClusterVisualizer.plot_cluster_distribution(clusters)
 #    logger.info("Plotting temporal distribution")
 #    ClusterVisualizer.plot_temporal_distribution(clusters)
-#    logger.info("Plotting embeddings")
+    logger.info("Plotting embeddings")
+    clusterer.plot_embeddings(clusters)
 #    ClusterVisualizer.plot_embeddings(clusters)
     # Пример облака слов для первого кластера
     if clusters:
